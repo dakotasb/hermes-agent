@@ -15,7 +15,6 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/useToast";
-import { Toast } from "@/components/Toast";
 import { useI18n } from "@/i18n";
 import { PluginSlot } from "@/plugins";
 import { cn } from "@/lib/utils";
@@ -37,7 +36,7 @@ export default function PluginsPage() {
   const [providerBusy, setProviderBusy] = useState(false);
   const [rowBusy, setRowBusy] = useState<string | null>(null);
 
-  const { toast, showToast } = useToast();
+  const { showToast } = useToast();
   const { t } = useI18n();
   const { setEnd } = usePageHeader();
 
@@ -361,7 +360,6 @@ export default function PluginsPage() {
         ) : null}
       </div>
 
-      <Toast toast={toast} />
       <PluginSlot name="plugins:bottom" />
     </div>
   );

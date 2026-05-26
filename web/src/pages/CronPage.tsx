@@ -11,7 +11,6 @@ import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
 import { useToast } from "@/hooks/useToast";
 import { useConfirmDelete } from "@/hooks/useConfirmDelete";
 import { useModalBehavior } from "@/hooks/useModalBehavior";
-import { Toast } from "@/components/Toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -80,7 +79,7 @@ const STATUS_TONE: Record<string, "success" | "warning" | "destructive"> = {
 export default function CronPage() {
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [loading, setLoading] = useState(true);
-  const { toast, showToast } = useToast();
+  const { showToast } = useToast();
   const { t } = useI18n();
   const { setEnd } = usePageHeader();
 
@@ -222,7 +221,6 @@ export default function CronPage() {
   return (
     <div className="flex flex-col gap-6">
       <PluginSlot name="cron:top" />
-      <Toast toast={toast} />
 
       <DeleteConfirmDialog
         open={jobDelete.isOpen}

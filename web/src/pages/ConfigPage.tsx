@@ -40,7 +40,6 @@ import {
 import { api } from "@/lib/api";
 import { getNestedValue, setNestedValue } from "@/lib/nested";
 import { useToast } from "@/hooks/useToast";
-import { Toast } from "@/components/Toast";
 import { AutoField } from "@/components/AutoField";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { ListItem } from "@nous-research/ui/ui/components/list-item";
@@ -121,7 +120,7 @@ export default function ConfigPage() {
   const [configPath, setConfigPath] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>("");
   const [confirmReset, setConfirmReset] = useState(false);
-  const { toast, showToast } = useToast();
+  const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { t } = useI18n();
   const { setEnd } = usePageHeader();
@@ -415,7 +414,6 @@ export default function ConfigPage() {
   return (
     <div className="flex flex-col gap-4">
       <PluginSlot name="config:top" />
-      <Toast toast={toast} />
 
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2">

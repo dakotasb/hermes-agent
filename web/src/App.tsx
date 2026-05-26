@@ -55,6 +55,7 @@ import { SidebarStatusStrip } from "@/components/SidebarStatusStrip";
 import { PageHeaderProvider } from "@/contexts/PageHeaderProvider";
 import { useSystemActions } from "@/contexts/useSystemActions";
 import type { SystemAction } from "@/contexts/system-actions-context";
+import { ToastProvider } from "@/hooks/useToast";
 import ConfigPage from "@/pages/ConfigPage";
 import DocsPage from "@/pages/DocsPage";
 import EnvPage from "@/pages/EnvPage";
@@ -397,6 +398,7 @@ export default function App() {
   }, []);
 
   return (
+    <ToastProvider>
     <div
       data-layout-variant={layoutVariant}
       className="font-mondwest flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden bg-black uppercase text-midground antialiased"
@@ -632,6 +634,7 @@ export default function App() {
 
       <PluginSlot name="overlay" />
     </div>
+    </ToastProvider>
   );
 }
 

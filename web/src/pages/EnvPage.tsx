@@ -17,7 +17,6 @@ import {
 import { api } from "@/lib/api";
 import type { EnvVarInfo } from "@/lib/api";
 import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
-import { Toast } from "@/components/Toast";
 import { useConfirmDelete } from "@/hooks/useConfirmDelete";
 import { useToast } from "@/hooks/useToast";
 import { OAuthProvidersCard } from "@/components/OAuthProvidersCard";
@@ -492,7 +491,7 @@ export default function EnvPage() {
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(true); // Show all providers by default
-  const { toast, showToast } = useToast();
+  const { showToast } = useToast();
   const { t } = useI18n();
   const { setAfterTitle } = usePageHeader();
 
@@ -722,7 +721,6 @@ export default function EnvPage() {
   return (
     <div className="flex flex-col gap-6">
       <PluginSlot name="env:top" />
-      <Toast toast={toast} />
 
       <DeleteConfirmDialog
         open={keyClear.isOpen}

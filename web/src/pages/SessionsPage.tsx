@@ -34,7 +34,6 @@ import type {
 import { timeAgo } from "@/lib/utils";
 import { Markdown } from "@/components/Markdown";
 import { PlatformsCard } from "@/components/PlatformsCard";
-import { Toast } from "@/components/Toast";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { ListItem } from "@nous-research/ui/ui/components/list-item";
 import { Spinner } from "@nous-research/ui/ui/components/spinner";
@@ -425,7 +424,7 @@ export default function SessionsPage() {
   const logScrollRef = useRef<HTMLPreElement | null>(null);
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [overviewSessions, setOverviewSessions] = useState<SessionInfo[]>([]);
-  const { toast, showToast } = useToast();
+  const { showToast } = useToast();
   const { t } = useI18n();
   const { setAfterTitle, setEnd } = usePageHeader();
   const { activeAction, actionStatus, dismissLog } = useSystemActions();
@@ -626,7 +625,6 @@ export default function SessionsPage() {
   return (
     <div className="flex flex-col gap-4">
       <PluginSlot name="sessions:top" />
-      <Toast toast={toast} />
 
       <DeleteConfirmDialog
         open={sessionDelete.isOpen}
