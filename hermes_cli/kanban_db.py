@@ -1826,13 +1826,22 @@ def _synthesize_ended_run(
 # ---------------------------------------------------------------------------
 
 def recompute_ready(conn: sqlite3.Connection) -> int:
-    """Promote ``todo`` tasks to ``ready`` when all parents are ``done`` or ``archived``.
+    """Promote ``todo`` and dependency-blocked tasks to ``ready`` when all
+    parents are ``done`` or ``archived``.
+
+    The ``blocked`` case covers tasks that were dispatched before their
+    inputs were available, called ``kanban_block()`` while waiting, and
+    should be re-queued now that their dependency chain is complete.
+    Only ``blocked`` tasks that have at least one parent link are
+    candidates — tasks blocked for human review with no dependency
+    structure are left untouched.
 
     Returns the number of tasks promoted.  Safe to call inside or outside
     an existing transaction; it opens its own IMMEDIATE txn.
     """
     promoted = 0
     with write_txn(conn):
+        # Original: promote todo → ready when all parents done.
         todo_rows = conn.execute(
             "SELECT id FROM tasks WHERE status = 'todo'"
         ).fetchall()
@@ -1850,6 +1859,34 @@ def recompute_ready(conn: sqlite3.Connection) -> int:
                     (task_id,),
                 )
                 _append_event(conn, task_id, "promoted", None)
+                promoted += 1
+
+        # Fix: also re-evaluate blocked tasks that have parent links and
+        # whose parents are now all done. These are tasks that ran early,
+        # found their inputs missing, and called kanban_block() while
+        # waiting — they should be re-queued when the dependency
+        # actually completes. Tasks blocked for human review with no
+        # parent links are excluded by the JOIN.
+        blocked_rows = conn.execute(
+            "SELECT DISTINCT t.id FROM tasks t "
+            "JOIN task_links l ON l.child_id = t.id "
+            "WHERE t.status = 'blocked'"
+        ).fetchall()
+        for row in blocked_rows:
+            task_id = row["id"]
+            parents = conn.execute(
+                "SELECT t.status FROM tasks t "
+                "JOIN task_links l ON l.parent_id = t.id "
+                "WHERE l.child_id = ?",
+                (task_id,),
+            ).fetchall()
+            if all(p["status"] in {"done", "archived"} for p in parents):
+                conn.execute(
+                    "UPDATE tasks SET status = 'ready' "
+                    "WHERE id = ? AND status = 'blocked'",
+                    (task_id,),
+                )
+                _append_event(conn, task_id, "promoted", {"from": "blocked"})
                 promoted += 1
     return promoted
 
@@ -3390,18 +3427,22 @@ def detect_crashed_workers(conn: sqlite3.Connection) -> list[str]:
     # ready → blocked with a ``gave_up`` event on top of the ``crashed``
     # event we already emitted.
     #
-    # Protocol-violation crashes force an immediate trip (failure_limit=1)
-    # because clean-exit-without-transition is deterministic: the next
-    # respawn will do exactly the same thing. Better to surface to a
-    # human with a clear reason than to loop ``DEFAULT_FAILURE_LIMIT``
-    # times first.
+    # Protocol-violation crashes (clean exit without kanban_complete/block)
+    # use the standard failure_limit rather than forcing an immediate trip.
+    # The original failure_limit=1 was overly aggressive: agents that write
+    # output files but exit before calling kanban_complete (e.g. hitting
+    # max_iterations) are retried and typically succeed on the second run
+    # because the workspace already has the output and the retry detects it.
+    # Tripping on the first violation gave up permanently on tasks that were
+    # effectively complete. The standard limit gives agents a fair retry
+    # window while still surfacing persistent violators to a human.
     auto_blocked: list[str] = []
     for tid, pid, claimer, protocol_violation, error_text in crash_details:
         tripped = _record_task_failure(
             conn, tid,
             error=error_text,
             outcome="crashed",
-            failure_limit=(1 if protocol_violation else None),
+            failure_limit=None,
             release_claim=False,
             end_run=False,
             event_payload_extra={"pid": pid, "claimer": claimer},
