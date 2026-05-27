@@ -4339,16 +4339,20 @@ def test_detect_crashed_workers_increments_counter(kanban_home):
         conn.close()
 
 
-def test_detect_crashed_workers_protocol_violation_auto_blocks(kanban_home):
+def test_detect_crashed_workers_protocol_violation_uses_standard_limit(kanban_home):
     """A worker that exited rc=0 while its task was still ``running``
     is a protocol violation (agent answered conversationally without
-    calling kanban_complete / kanban_block). Retrying will just loop,
-    so auto-block immediately instead of waiting for the breaker to
-    trip at ``DEFAULT_FAILURE_LIMIT``.
+    calling kanban_complete / kanban_block). The task is re-queued for
+    retry under the standard failure budget rather than auto-blocking
+    on the first occurrence.
 
-    Regression test for the respawn-loop-after-completion bug reported
-    against small local models (gemma4-e2b q4) where the model writes
-    the answer as plain text and the CLI exits rc=0 cleanly.
+    Rationale: capable agents that write output to the workspace but hit
+    max_iterations before calling kanban_complete typically succeed on
+    the second dispatch because the workspace already has the output.
+    Tripping on the first violation gave up permanently on tasks that
+    were effectively complete.  Systemic failures (3+ tasks sharing the
+    same error fingerprint) still trip at failure_limit=1 — those
+    indicate broken infra, not a retry-able edge case.
     """
     import hermes_cli.kanban_db as _kb
     conn = kb.connect()
@@ -4373,10 +4377,13 @@ def test_detect_crashed_workers_protocol_violation_auto_blocks(kanban_home):
 
         assert tid in result_crashed, "should be detected as crashed"
         task = kb.get_task(conn, tid)
-        assert task.status == "blocked", (
-            f"protocol violation should auto-block on first occurrence, "
+        # Standard retry: task goes back to ready (not blocked) on first
+        # protocol violation — the breaker hasn't tripped yet.
+        assert task.status == "ready", (
+            f"first protocol violation should re-queue for retry, "
             f"got status={task.status}"
         )
+        assert task.consecutive_failures == 1
         assert "kanban_complete" in (task.last_failure_error or ""), (
             f"expected protocol-violation message, got {task.last_failure_error!r}"
         )
@@ -4391,8 +4398,9 @@ def test_detect_crashed_workers_protocol_violation_auto_blocks(kanban_home):
         assert "crashed" not in kinds, (
             f"should NOT emit 'crashed' event on clean exit, got {kinds}"
         )
-        assert "gave_up" in kinds, (
-            f"breaker should trip, expected 'gave_up' event, got {kinds}"
+        # The breaker has NOT tripped on a single violation — no gave_up yet.
+        assert "gave_up" not in kinds, (
+            f"breaker should NOT trip on first protocol violation, got {kinds}"
         )
     finally:
         conn.close()
