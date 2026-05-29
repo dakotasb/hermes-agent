@@ -21,6 +21,12 @@ Exposes an HTTP server with endpoints:
 - POST /v1/runs/{run_id}/stop       — interrupt a running agent
 - GET  /health                     — health check
 - GET  /health/detailed            — rich status for cross-container dashboard probing
+- GET  /api/boards                          — list kanban boards (projects)
+- POST /api/boards                          — create a board
+- GET/PATCH/DELETE /api/boards/{slug}       — read/update/archive a board
+- GET  /api/boards/{slug}/tasks             — list tasks on a board
+- POST /api/boards/{slug}/tasks             — create task on a board
+- PATCH /api/boards/{slug}/tasks/{task_id} — update task status/assignee/priority
 
 Any OpenAI-compatible frontend (Open WebUI, LobeChat, LibreChat,
 AnythingLLM, NextChat, ChatBox, etc.) can connect to hermes-agent
@@ -3275,6 +3281,361 @@ class APIServerAdapter(BasePlatformAdapter):
             return web.json_response({"error": str(e)}, status=500)
 
     # ------------------------------------------------------------------
+    # Kanban boards API  (projects primitive)
+    # ------------------------------------------------------------------
+    #
+    # Boards are Hermes's native project isolation primitive: each board
+    # has its own kanban.db, workspaces directory, and dispatcher loop.
+    # These endpoints surface the existing kanban_db.py board/task CRUD
+    # over REST so external dashboards don't need a separate data store.
+    #
+    # Route summary (registered in connect() below):
+    #   GET    /api/boards                       — list boards
+    #   POST   /api/boards                       — create board
+    #   GET    /api/boards/{slug}                — board metadata + task counts
+    #   PATCH  /api/boards/{slug}                — update board metadata
+    #   DELETE /api/boards/{slug}                — archive (default) or delete
+    #   GET    /api/boards/{slug}/tasks          — list tasks on a board
+    #   POST   /api/boards/{slug}/tasks          — create task on a board
+    #   PATCH  /api/boards/{slug}/tasks/{task_id} — update task status/assignee
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _board_to_dict(meta: dict) -> dict:
+        """Serialize board metadata for API responses.
+
+        ``db_path`` is stripped — it's a server-local filesystem path that
+        external clients have no use for and shouldn't depend on.
+        """
+        return {
+            "slug":          meta.get("slug", ""),
+            "name":          meta.get("name", ""),
+            "description":   meta.get("description", ""),
+            "icon":          meta.get("icon", ""),
+            "color":         meta.get("color", ""),
+            "created_at":    meta.get("created_at"),
+            "archived":      bool(meta.get("archived", False)),
+            "default_workdir": meta.get("default_workdir"),
+        }
+
+    @staticmethod
+    def _task_to_dict(task: Any, *, board: str = "default") -> dict:
+        """Serialize a kanban_db.Task dataclass for API responses.
+
+        Adds ``board`` so aggregated multi-board responses tell the client
+        which project each task belongs to.
+        """
+        return {
+            "id":                  task.id,
+            "title":               task.title,
+            "body":                task.body,
+            "assignee":            task.assignee,
+            "status":              task.status,
+            "priority":            task.priority,
+            "board":               board,
+            "tenant":              task.tenant,
+            "workspace_kind":      task.workspace_kind,
+            "workspace_path":      task.workspace_path,
+            "branch_name":         task.branch_name,
+            "created_by":          task.created_by,
+            "created_at":          task.created_at,
+            "started_at":          task.started_at,
+            "completed_at":        task.completed_at,
+            "result":              task.result,
+            "skills":              list(task.skills) if task.skills else [],
+            "max_retries":         task.max_retries,
+            "session_id":          task.session_id,
+            "consecutive_failures": task.consecutive_failures,
+            "last_failure_error":  task.last_failure_error,
+        }
+
+    async def _handle_list_boards(self, request: "web.Request") -> "web.Response":
+        """GET /api/boards — list all kanban boards (projects)."""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        try:
+            from hermes_cli import kanban_db as kb
+            include_archived = (
+                request.query.get("include_archived", "").lower() in {"true", "1"}
+            )
+            boards = kb.list_boards(include_archived=include_archived)
+            return web.json_response(
+                {"boards": [self._board_to_dict(b) for b in boards]}
+            )
+        except Exception as exc:
+            logger.exception("[api_server] list_boards failed")
+            return web.json_response({"error": str(exc)}, status=500)
+
+    async def _handle_create_board(self, request: "web.Request") -> "web.Response":
+        """POST /api/boards — create a new kanban board (project).
+
+        Required body field: ``slug`` (kebab-case, e.g. ``project-alpha``).
+        Optional: ``name``, ``description``, ``icon``, ``color``,
+        ``default_workdir``.  Idempotent — returns the existing board if the
+        slug already exists.
+        """
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        body, err = await self._read_json_body(request)
+        if err:
+            return err
+        slug = (body.get("slug") or "").strip()
+        if not slug:
+            return web.json_response({"error": "slug is required"}, status=400)
+        try:
+            from hermes_cli import kanban_db as kb
+            meta = kb.create_board(
+                slug,
+                name=body.get("name") or None,
+                description=body.get("description") or None,
+                icon=body.get("icon") or None,
+                color=body.get("color") or None,
+                default_workdir=body.get("default_workdir") or None,
+            )
+            return web.json_response({"board": self._board_to_dict(meta)}, status=201)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception as exc:
+            logger.exception("[api_server] create_board failed")
+            return web.json_response({"error": str(exc)}, status=500)
+
+    async def _handle_get_board(self, request: "web.Request") -> "web.Response":
+        """GET /api/boards/{slug} — board metadata plus live task counts."""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        slug = request.match_info["slug"]
+        try:
+            import contextlib
+            from hermes_cli import kanban_db as kb
+            meta = kb.read_board_metadata(slug)
+            # Attach per-status task counts for the dashboard summary cards.
+            counts: Dict[str, int] = {}
+            try:
+                with contextlib.closing(kb.connect(board=slug)) as conn:
+                    for st in ("ready", "running", "blocked", "review", "done"):
+                        row = conn.execute(
+                            "SELECT COUNT(*) FROM tasks WHERE status=?", (st,)
+                        ).fetchone()
+                        counts[st] = row[0] if row else 0
+                    total_row = conn.execute(
+                        "SELECT COUNT(*) FROM tasks WHERE status != 'archived'"
+                    ).fetchone()
+                    counts["total"] = total_row[0] if total_row else 0
+            except Exception:
+                pass  # task counts are best-effort; board metadata still returned
+            result = self._board_to_dict(meta)
+            result["task_counts"] = counts
+            return web.json_response({"board": result})
+        except Exception as exc:
+            logger.exception("[api_server] get_board failed")
+            return web.json_response({"error": str(exc)}, status=500)
+
+    async def _handle_patch_board(self, request: "web.Request") -> "web.Response":
+        """PATCH /api/boards/{slug} — update board metadata fields.
+
+        All body fields are optional; only supplied fields are updated.
+        Accepts: ``name``, ``description``, ``icon``, ``color``,
+        ``archived``, ``default_workdir``.
+        """
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        slug = request.match_info["slug"]
+        body, err = await self._read_json_body(request)
+        if err:
+            return err
+        try:
+            from hermes_cli import kanban_db as kb
+            meta = kb.write_board_metadata(
+                slug,
+                name=body.get("name"),
+                description=body.get("description"),
+                icon=body.get("icon"),
+                color=body.get("color"),
+                archived=body.get("archived"),
+                default_workdir=body.get("default_workdir"),
+            )
+            return web.json_response({"board": self._board_to_dict(meta)})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception as exc:
+            logger.exception("[api_server] patch_board failed")
+            return web.json_response({"error": str(exc)}, status=500)
+
+    async def _handle_delete_board(self, request: "web.Request") -> "web.Response":
+        """DELETE /api/boards/{slug} — archive or hard-delete a board.
+
+        Default is ``archive`` (moves to ``boards/_archived/``, recoverable).
+        Pass ``?hard=true`` for permanent deletion.  The ``default`` board
+        cannot be deleted.
+        """
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        slug = request.match_info["slug"]
+        hard = request.query.get("hard", "").lower() in {"true", "1"}
+        try:
+            from hermes_cli import kanban_db as kb
+            result = kb.remove_board(slug, archive=not hard)
+            return web.json_response({"ok": True, "result": result})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception as exc:
+            logger.exception("[api_server] delete_board failed")
+            return web.json_response({"error": str(exc)}, status=500)
+
+    async def _handle_list_board_tasks(self, request: "web.Request") -> "web.Response":
+        """GET /api/boards/{slug}/tasks — list tasks on a specific board.
+
+        Query params (all optional):
+          ``assignee``        — filter by assignee profile name
+          ``status``          — filter by status (e.g. ``running``, ``done``)
+          ``include_archived`` — include archived tasks (default: false)
+          ``limit``           — max rows to return
+        """
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        slug = request.match_info["slug"]
+        try:
+            import contextlib
+            from hermes_cli import kanban_db as kb
+            assignee    = request.query.get("assignee") or None
+            status      = request.query.get("status") or None
+            inc_arch    = request.query.get("include_archived", "").lower() in {"true", "1"}
+            limit_raw   = request.query.get("limit")
+            limit       = int(limit_raw) if limit_raw and limit_raw.isdigit() else None
+            with contextlib.closing(kb.connect(board=slug)) as conn:
+                tasks = kb.list_tasks(
+                    conn,
+                    assignee=assignee,
+                    status=status,
+                    include_archived=inc_arch,
+                    limit=limit,
+                )
+            return web.json_response({
+                "board": slug,
+                "tasks": [self._task_to_dict(t, board=slug) for t in tasks],
+            })
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception as exc:
+            logger.exception("[api_server] list_board_tasks failed")
+            return web.json_response({"error": str(exc)}, status=500)
+
+    async def _handle_create_board_task(self, request: "web.Request") -> "web.Response":
+        """POST /api/boards/{slug}/tasks — create a task on a specific board.
+
+        Required body field: ``title``.
+        Optional: ``body``, ``assignee``, ``created_by``, ``priority``,
+        ``parents`` (list of parent task ids), ``triage`` (bool),
+        ``idempotency_key``, ``max_runtime_seconds``, ``skills`` (list),
+        ``max_retries``, ``initial_status`` (``running``|``blocked``),
+        ``session_id``.
+        """
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        slug = request.match_info["slug"]
+        body, err = await self._read_json_body(request)
+        if err:
+            return err
+        title = (body.get("title") or "").strip()
+        if not title:
+            return web.json_response({"error": "title is required"}, status=400)
+        try:
+            import contextlib
+            from hermes_cli import kanban_db as kb
+            with contextlib.closing(kb.connect(board=slug)) as conn:
+                task_id = kb.create_task(
+                    conn,
+                    title=title,
+                    body=body.get("body"),
+                    assignee=body.get("assignee"),
+                    created_by=body.get("created_by", "api_server"),
+                    priority=int(body.get("priority", 0)),
+                    parents=body.get("parents") or [],
+                    triage=bool(body.get("triage", False)),
+                    idempotency_key=body.get("idempotency_key"),
+                    max_runtime_seconds=body.get("max_runtime_seconds"),
+                    skills=body.get("skills"),
+                    max_retries=body.get("max_retries"),
+                    initial_status=body.get("initial_status", "running"),
+                    session_id=body.get("session_id"),
+                )
+                task = kb.get_task(conn, task_id)
+            return web.json_response(
+                {"task": self._task_to_dict(task, board=slug)}, status=201
+            )
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception as exc:
+            logger.exception("[api_server] create_board_task failed")
+            return web.json_response({"error": str(exc)}, status=500)
+
+    async def _handle_patch_board_task(self, request: "web.Request") -> "web.Response":
+        """PATCH /api/boards/{slug}/tasks/{task_id} — update a task.
+
+        Accepted body fields: ``status``, ``assignee``, ``priority``.
+        Other fields are intentional omissions — title/body edits go
+        through ``hermes kanban edit`` which applies spec-level validation
+        and records an audit event.
+        """
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        slug    = request.match_info["slug"]
+        task_id = request.match_info["task_id"]
+        body, err = await self._read_json_body(request)
+        if err:
+            return err
+        try:
+            import contextlib
+            from hermes_cli import kanban_db as kb
+            with contextlib.closing(kb.connect(board=slug)) as conn:
+                task = kb.get_task(conn, task_id)
+                if task is None:
+                    return web.json_response(
+                        {"error": f"Task not found: {task_id}"}, status=404
+                    )
+                updates: list = []
+                params: list = []
+                if "status" in body:
+                    new_status = body["status"]
+                    if new_status not in kb.VALID_STATUSES:
+                        return web.json_response(
+                            {"error": f"status must be one of {sorted(kb.VALID_STATUSES)}"},
+                            status=400,
+                        )
+                    updates.append("status=?")
+                    params.append(new_status)
+                if "priority" in body:
+                    updates.append("priority=?")
+                    params.append(int(body["priority"]))
+                if updates:
+                    params.append(task_id)
+                    with kb.write_txn(conn):
+                        conn.execute(
+                            f"UPDATE tasks SET {', '.join(updates)} WHERE id=?", params
+                        )
+                if "assignee" in body:
+                    # assign_task manages its own write_txn and validates running state
+                    kb.assign_task(conn, task_id, body["assignee"])
+                task = kb.get_task(conn, task_id)
+            return web.json_response({"task": self._task_to_dict(task, board=slug)})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except RuntimeError as exc:
+            # assign_task raises RuntimeError when task is currently running
+            return web.json_response({"error": str(exc)}, status=409)
+        except Exception as exc:
+            logger.exception("[api_server] patch_board_task failed")
+            return web.json_response({"error": str(exc)}, status=500)
+
+    # ------------------------------------------------------------------
     # Output extraction helper
     # ------------------------------------------------------------------
 
@@ -4079,6 +4440,15 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_post("/api/jobs/{job_id}/pause", self._handle_pause_job)
             self._app.router.add_post("/api/jobs/{job_id}/resume", self._handle_resume_job)
             self._app.router.add_post("/api/jobs/{job_id}/run", self._handle_run_job)
+            # Kanban boards API (projects primitive)
+            self._app.router.add_get("/api/boards", self._handle_list_boards)
+            self._app.router.add_post("/api/boards", self._handle_create_board)
+            self._app.router.add_get("/api/boards/{slug}", self._handle_get_board)
+            self._app.router.add_patch("/api/boards/{slug}", self._handle_patch_board)
+            self._app.router.add_delete("/api/boards/{slug}", self._handle_delete_board)
+            self._app.router.add_get("/api/boards/{slug}/tasks", self._handle_list_board_tasks)
+            self._app.router.add_post("/api/boards/{slug}/tasks", self._handle_create_board_task)
+            self._app.router.add_patch("/api/boards/{slug}/tasks/{task_id}", self._handle_patch_board_task)
             # Structured event streaming
             self._app.router.add_post("/v1/runs", self._handle_runs)
             self._app.router.add_get("/v1/runs/{run_id}", self._handle_get_run)
