@@ -5730,6 +5730,52 @@ class GatewayRunner:
                             res.promoted,
                             len(res.auto_blocked) if hasattr(res.auto_blocked, "__len__") else 0,
                         )
+                # Auto-subscribe dispatch_notify_chat to every spawned task.
+                # Uses the existing notifier watcher for delivery — no new
+                # infrastructure.  Controlled by kanban.dispatch_notify_chat in
+                # config.yaml (format: "platform:chat_id" or
+                # "platform:chat_id:thread_id").
+                _dispatch_notify = (kanban_cfg.get("dispatch_notify_chat") or "").strip()
+                if _dispatch_notify and any_spawned:
+                    _dn_parts = _dispatch_notify.split(":", 2)
+                    if len(_dn_parts) >= 2:
+                        _dn_platform  = _dn_parts[0]
+                        _dn_chat_id   = _dn_parts[1]
+                        _dn_thread_id = _dn_parts[2] if len(_dn_parts) > 2 else None
+                        _dn_notifier_profile = self._active_profile_name()
+                        for _slug, _res in (results or []):
+                            if _res is None:
+                                continue
+                            for _task_id, _assignee, _ in (getattr(_res, "spawned", None) or []):
+                                def _auto_sub(
+                                    slug=_slug, task_id=_task_id,
+                                    platform=_dn_platform, chat_id=_dn_chat_id,
+                                    thread_id=_dn_thread_id,
+                                    notifier_profile=_dn_notifier_profile,
+                                ):
+                                    conn = _kb.connect(board=slug)
+                                    try:
+                                        _kb.add_notify_sub(
+                                            conn,
+                                            task_id=task_id,
+                                            platform=platform,
+                                            chat_id=chat_id,
+                                            thread_id=thread_id,
+                                            notifier_profile=notifier_profile,
+                                        )
+                                        logger.debug(
+                                            "kanban dispatcher: auto-subscribed %s:%s to task %s (board %s)",
+                                            platform, chat_id, task_id, slug,
+                                        )
+                                    except Exception as _exc:
+                                        logger.warning(
+                                            "kanban dispatcher: auto-subscribe failed for task %s: %s",
+                                            task_id, _exc,
+                                        )
+                                    finally:
+                                        conn.close()
+                                await asyncio.to_thread(_auto_sub)
+
                 # Health telemetry (aggregate across boards)
                 ready_pending = await asyncio.to_thread(_ready_nonempty)
                 if ready_pending and not any_spawned:

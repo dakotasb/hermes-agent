@@ -1741,6 +1741,15 @@ DEFAULT_CONFIG = {
         # worker process (if still running host-locally) is terminated
         # before the reclaim.  0 disables stale detection entirely.
         "dispatch_stale_timeout_seconds": 14400,
+        # Gateway source to auto-subscribe to every task the dispatcher
+        # spawns.  Format: "platform:chat_id" or "platform:chat_id:thread_id".
+        # The existing notifier watcher delivers terminal events (completed,
+        # blocked, crashed, timed_out, gave_up) to this destination with no
+        # additional infrastructure.  Intended for orchestrator profiles that
+        # need to hear back from workers without polling.
+        # Example: "discord:1234567890"  or  "api_server:default"
+        # Leave empty (default) to disable auto-subscription.
+        "dispatch_notify_chat": "",
     },
 
     # execute_code settings — controls the tool used for programmatic tool calls.
