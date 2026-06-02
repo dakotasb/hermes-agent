@@ -14,18 +14,19 @@ import {
   X,
 } from "lucide-react";
 import spinners from "unicode-animations";
-import { H2 } from "@/components/NouiTypography";
+import { H2 } from "@nous-research/ui/ui/components/typography/h2";
 import { api } from "@/lib/api";
 import type { ProfileInfo } from "@/lib/api";
 import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
-import { useToast } from "@/hooks/useToast";
-import { useConfirmDelete } from "@/hooks/useConfirmDelete";
+import { useToast } from "@nous-research/ui/hooks/use-toast";
+import { useConfirmDelete } from "@nous-research/ui/hooks/use-confirm-delete";
 import { useModalBehavior } from "@/hooks/useModalBehavior";
-import { Card, CardContent } from "@/components/ui/card";
+import { Toast } from "@nous-research/ui/ui/components/toast";
+import { Card, CardContent } from "@nous-research/ui/ui/components/card";
 import { Badge } from "@nous-research/ui/ui/components/badge";
 import { Button } from "@nous-research/ui/ui/components/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Input } from "@nous-research/ui/ui/components/input";
+import { Label } from "@nous-research/ui/ui/components/label";
 import { Checkbox } from "@nous-research/ui/ui/components/checkbox";
 import { useI18n } from "@/i18n";
 import { usePageHeader } from "@/contexts/usePageHeader";
@@ -67,7 +68,7 @@ function ProfilesLoadingSpinner() {
 export default function ProfilesPage() {
   const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
   const [loading, setLoading] = useState(true);
-  const { showToast } = useToast();
+  const { toast, showToast } = useToast();
   const { t } = useI18n();
   const { setEnd } = usePageHeader();
 
@@ -258,10 +259,8 @@ export default function ProfilesPage() {
   }
 
   return (
-    // Profile names, model slugs, and paths are case-sensitive; opt out of
-    // the app shell's global ``uppercase`` so they render as the user typed.
-    // Children that explicitly opt back in (Badges, etc.) keep their casing.
-    <div className="flex flex-col gap-6 normal-case">
+    <div className="flex flex-col gap-6">
+      <Toast toast={toast} />
 
       <DeleteConfirmDialog
         open={profileDelete.isOpen}
