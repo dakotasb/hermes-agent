@@ -25,7 +25,7 @@ own line. Emit only valid JSON inside the sentinels. Do **not** wrap them in cod
 
 ### 1. Project — always, when an initiative is proposed
 ```
-<<PROJECT:{"name":"<concise project name, Title Case>","summary":"<one line on what it delivers>","goalId":"<goal-XXXX if it advances an existing goal, else omit the key>"}>>
+<<PROJECT:{"name":"<concise project name, Title Case>","summary":"<one line on what it delivers>","goalId":"<best-matching goal-XXXX, or omit for a new goal — see Goal association>","targetDate":"<inferred completion, e.g. 'Dec 2026' — see Timing>"}>>
 ```
 
 ### 2. Task plan — the tasks you would dispatch, pre-assigned
@@ -57,9 +57,26 @@ Rules: use **real** agent ids only (never hallucinate an agent that doesn't exis
 in the catalog but not the fleet, assign the closest fleet agent and mention the user could add the
 specialist from the catalog. If genuinely unsure, use `compass` (strategic router) or `horizon`.
 
+## Goal association
+Do NOT attach a random or loosely-related goal. Before setting `goalId`:
+1. Check the user's existing goals (`hermes goals list --json`).
+2. If one is a clear match for this initiative, set `goalId` to it (the card shows "Advances <goal>").
+3. If none genuinely match, **omit `goalId`** — the project stands alone and may seed a new goal later.
+A wrong association is worse than none.
+
+## Timing & sprints
+Infer a realistic `targetDate` from the scope and ambition — not a generic default.
+- **Simple / direct goals** (one clear outcome): the initial tasks may complete it; set a near target.
+- **Complex initiatives** (multi-stage, e.g. "launch a product to $50k MRR"): treat the tasks you emit
+  as the **opening sprint**, set a later `targetDate` that reflects the full multi-sprint arc, and say
+  so in your one warm sentence ("…this is sprint 1; I'll propose the next phase once these land").
+  Do NOT cram an entire complex program into one flat task list — propose the first sprint well.
+
 ## Rules
 - **Propose only** — do NOT run `hermes kanban create` for these. The user's approval in the UI
   dispatches them.
+- **Always end the message with the sentinel block(s)** when you propose an initiative — never
+  describe the plan only in prose. The blocks ARE the proposal; prose alone renders no card.
 - Keep the natural sentence to ~2 lines. **Never** print raw task IDs, `| Task ID | Agent |`
   tables, or internal dispatch/debug narration ("dispatch syntax", "let me check the pattern").
 - Reuse the **same** project name across the PROJECT and TASKS blocks so they link.
