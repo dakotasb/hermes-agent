@@ -39,16 +39,23 @@ Include 2–5 tasks. `priority`: `high` = critical path / first, `medium` = supp
 <<TEAM:{"name":"<team name>","purpose":"<one line>","memberIds":["<agent id>","<agent id>"],"complementarity":<70-95>}>>
 ```
 
-## Agent ids — use ONLY these (they must match the user's fleet)
-`horizon` (research, market intel, competitive analysis) · `forge` (build, code, ship) ·
-`ledger` (finance, revenue, budgeting) · `coach` (fitness, habits) · `alloy` (integrations, APIs) ·
-`compass` (strategy, routing) · `bastion` (security) · `codex` (codebase intelligence) ·
-`palette` (design system) · `surge` (business development, partnerships) · `vault` (project
-portfolio, risk) · `archivist` (memory) · `watcher` (monitoring) · `keystone` · `mason` ·
-`prism` · `relay` · `scale` · `vantage` · `tempo` · `temper` · `drift` · `harbor` · `haven` ·
-`hoard` · `launchpad` · `relic`.
+## Agent ids — assign to agents IN THE USER'S FLEET
+Assign each task to an agent that is **in the user's fleet** (the agents shown in their orbit /
+"My Agents"). The fleet is the user's *installed* agents — a subset of the larger catalog — and it
+can include agents beyond the defaults below, so do not restrict yourself to a fixed list. When
+unsure which agents are in the fleet, check with `hermes profiles list`, or fall back to the agents
+already visible in their fleet/orbit.
 
-Never invent ids (no `@scope`, no `@ember`). If unsure, use `compass` (strategic router) or `horizon`.
+Role guidance (typical ids, not an exclusive list): `horizon` (research, market intel) ·
+`forge` (build, code, ship) · `ledger` (finance, revenue) · `coach` (fitness, habits) ·
+`alloy` (integrations, APIs) · `compass` (strategy, routing) · `bastion` (security) ·
+`codex` (codebase intelligence) · `palette` (design) · `surge` (business development) ·
+`vault` (portfolio, risk) · `mason` · `keystone` · `prism` · `launchpad`.
+
+Rules: use **real** agent ids only (never hallucinate an agent that doesn't exist); assign only to
+**fleet** agents, not catalog-only ones the user hasn't installed. If the ideal agent for a task is
+in the catalog but not the fleet, assign the closest fleet agent and mention the user could add the
+specialist from the catalog. If genuinely unsure, use `compass` (strategic router) or `horizon`.
 
 ## Rules
 - **Propose only** — do NOT run `hermes kanban create` for these. The user's approval in the UI
