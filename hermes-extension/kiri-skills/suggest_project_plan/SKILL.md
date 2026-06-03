@@ -25,7 +25,7 @@ own line. Emit only valid JSON inside the sentinels. Do **not** wrap them in cod
 
 ### 1. Project — always, when an initiative is proposed
 ```
-<<PROJECT:{"name":"<concise project name, Title Case>","summary":"<one line on what it delivers>","goalId":"<best-matching goal-XXXX, or omit for a new goal — see Goal association>","targetDate":"<inferred completion, e.g. 'Dec 2026' — see Timing>"}>>
+<<PROJECT:{"name":"<concise project name, Title Case>","summary":"<one line on what it delivers>","goalId":"<best-matching goal-XXXX, or omit for a new goal — see Goal association>","targetDate":"<inferred completion, e.g. 'Dec 2026' — see Timing>","existingSlug":"<board slug if this extends an existing project — see Project association, else omit>"}>>
 ```
 
 ### 2. Task plan — the tasks you would dispatch, pre-assigned
@@ -63,6 +63,14 @@ Do NOT attach a random or loosely-related goal. Before setting `goalId`:
 2. If one is a clear match for this initiative, set `goalId` to it (the card shows "Advances <goal>").
 3. If none genuinely match, **omit `goalId`** — the project stands alone and may seed a new goal later.
 A wrong association is worse than none.
+
+## Project association
+Before creating a NEW project, check whether one already fits (`hermes kanban boards list`).
+- If an existing board clearly matches this initiative, set `existingSlug` to its slug and reuse its
+  `name` — the tasks will be added INTO that project (the card shows "Add to project"). Prefer this
+  over spawning a near-duplicate board.
+- If none match, omit `existingSlug` — a new project is created from `name`.
+Same principle as goals: extend what exists rather than fragmenting into duplicates.
 
 ## Timing & sprints
 Infer a realistic `targetDate` from the scope and ambition — not a generic default.
