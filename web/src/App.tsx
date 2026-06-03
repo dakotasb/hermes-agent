@@ -37,6 +37,7 @@ import {
   PanelLeftOpen,
   Plug,
   Puzzle,
+  Radio,
   RotateCw,
   Settings,
   Shield,
@@ -78,6 +79,7 @@ import SkillsPage from "@/pages/SkillsPage";
 import PluginsPage from "@/pages/PluginsPage";
 import McpPage from "@/pages/McpPage";
 import PairingPage from "@/pages/PairingPage";
+import ChannelsPage from "@/pages/ChannelsPage";
 import WebhooksPage from "@/pages/WebhooksPage";
 import SystemPage from "@/pages/SystemPage";
 import ChatPage from "@/pages/ChatPage";
@@ -131,6 +133,7 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/plugins": PluginsPage,
   "/mcp": McpPage,
   "/pairing": PairingPage,
+  "/channels": ChannelsPage,
   "/webhooks": WebhooksPage,
   "/system": SystemPage,
   "/profiles": ProfilesPage,
@@ -171,6 +174,7 @@ const BUILTIN_NAV_REST: NavItem[] = [
   { path: "/skills", labelKey: "skills", label: "Skills", icon: Package },
   { path: "/plugins", labelKey: "plugins", label: "Plugins", icon: Puzzle },
   { path: "/mcp", label: "MCP", icon: Plug },
+  { path: "/channels", label: "Channels", icon: Radio },
   { path: "/webhooks", label: "Webhooks", icon: Webhook },
   { path: "/pairing", label: "Pairing", icon: ShieldCheck },
   { path: "/profiles", labelKey: "profiles", label: "Profiles", icon: Users },
