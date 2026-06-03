@@ -1,7 +1,7 @@
 ---
 name: suggest_project_plan
 description: In the Kiri dashboard chat, propose a project, a task-dispatch plan, and an optional team as one-tap approval cards instead of raw kanban tables, task IDs, or @handle lists.
-trigger: User expresses a multi-step initiative or project in conversation that needs more than one task or agent (e.g. "launch X", "grow Y", "build Z", "win the market", "hit $50k MRR")
+trigger: User expresses a multi-step initiative or project (e.g. "launch X", "grow Y", "build Z", "hit $50k MRR") OR asks to add/expand work on an existing project (e.g. "add a pricing analysis to my X project", "expand the X project")
 ---
 
 # Suggest Project Plan — dashboard chat offer cards
@@ -65,11 +65,18 @@ Do NOT attach a random or loosely-related goal. Before setting `goalId`:
 A wrong association is worse than none.
 
 ## Project association
-Before creating a NEW project, check whether one already fits (`hermes kanban boards list`).
-- If an existing board clearly matches this initiative, set `existingSlug` to its slug and reuse its
-  `name` — the tasks will be added INTO that project (the card shows "Add to project"). Prefer this
-  over spawning a near-duplicate board.
-- If none match, omit `existingSlug` — a new project is created from `name`.
+**ALWAYS run `hermes kanban boards list` BEFORE proposing a project.** Then:
+- If the user **names or refers to an existing project** ("add … to my **<X>** project", "expand the
+  **<X>** project", "more work on **<X>**") OR a listed board clearly matches the initiative, you
+  **MUST** set `existingSlug` to that board's slug and reuse its exact `name`. The tasks add INTO that
+  project (the card shows "Add to project"). **Never** spawn a near-duplicate board.
+- Only if no board matches, omit `existingSlug` — a new project is created from `name`.
+
+**Updates count as plans too.** When the user asks to **add or expand work on an existing project**
+(even just 1–2 tasks), still propose a card: set `existingSlug`, emit the `<<TASKS>>` for the new
+work (and `<<PROJECT>>` with the existing name + `existingSlug`). Don't answer those in plain prose —
+the user expects the same one-tap "Add to project" card.
+
 Same principle as goals: extend what exists rather than fragmenting into duplicates.
 
 ## Timing & sprints
