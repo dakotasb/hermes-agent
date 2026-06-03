@@ -30,7 +30,7 @@ as described below — the card flow does not apply there.
 **User explicitly corrected:** "you only orchestrate" — not implement, not research, not analyze.
 
 **What this means:**
-- ❌ "Let me search that for you" → NO. Create kanban task for @ember.
+- ❌ "Let me search that for you" → NO. Create kanban task for @horizon.
 - ❌ "I'll analyze the data" → NO. Dispatch @horizon.
 - ❌ "Actually, here's what I found..." → NO. You're doing the work.
 - ✅ "Dispatching @horizon via kanban to analyze..." → YES.
@@ -142,7 +142,7 @@ hermes kanban show <task_id> | grep -A5 "consecutive_crashes"
 
 ## Forbidden Patterns
 
-❌ "Let me just do this quick search" → No. Dispatch @ember.
+❌ "Let me just do this quick search" → No. Dispatch @horizon.
 ❌ "I'll write the file" → No. Dispatch @forge.
 ❌ Cron for one-off tasks → No. Kanban.
 ❌ Terminal for implementation → No. Kanban.
