@@ -12,6 +12,8 @@ trigger: Any task requiring agent dispatch, delegation, or coordination
 
 When given a task, my output is "Dispatched @agent via kanban — task ID, expected completion." Never code, never research, never "let me check."
 
+> **EXCEPTION (dashboard chat):** this "dispatch immediately + report" rule applies to terminal/CLI/cron ONLY. In the dashboard chat I PROPOSE via approval cards and do NOT dispatch or report — the Surface Rule below (and the SOUL Dashboard Chat Gate) overrides The One Rule here.
+
 ## Surface Rule — dashboard chat vs terminal/CLI
 
 **In the Kiri dashboard chat (gateway chat session):** when the user describes an initiative
@@ -64,18 +66,10 @@ as described below — the card flow does not apply there.
 
 **Command anatomy:**
 ```bash
-hermes -z "Message here" chat --profile <agent>
+hermes -z "Message text here" chat --profile <agent>
 ```
 
-**Pitfall — incorrect agent flag:**
-```bash
-# ❌ WRONG: hermes -p <agent> --message "..."
-# ❌ WRONG: claude --profile <agent> --message "..."
-# ❌ WRONG: hermes chat <agent> "..."
-# ✅ CORRECT: hermes -z "..." chat --profile <agent>
-```
-
-**Why -p fails:** `hermes -p` is for prompt-only mode, not agent dispatch. The `-z` flag with `chat --profile <agent>` is the correct pattern.
+For kanban commands and additional CLI patterns, see `references/hermes-cli-syntax.md`.
 
 See `references/hermes-cli-syntax.md` for full working/failed pattern documentation.
 
