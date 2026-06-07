@@ -157,6 +157,20 @@ export interface Translations {
     muteHaptics: string
     unmuteHaptics: string
     openSettings: string
+    openKeybinds: string
+  }
+
+  keybinds: {
+    title: string
+    subtitle: (open: string) => string
+    rebind: string
+    reset: string
+    resetAll: string
+    pressKey: string
+    set: string
+    conflictWith: (label: string) => string
+    categories: Record<string, string>
+    actions: Record<string, string>
   }
 
   language: {
@@ -436,7 +450,15 @@ export interface Translations {
       ready: string
       nousIncluded: string
       noApiKeyRequired: string
-      postSetup: (step: string) => string
+      postSetupHint: (step: string) => string
+      postSetupRun: string
+      postSetupRunning: string
+      postSetupStarting: string
+      postSetupCompleteTitle: string
+      postSetupCompleteMessage: (step: string) => string
+      postSetupErrorTitle: string
+      postSetupErrorMessage: (step: string) => string
+      postSetupFailed: (step: string) => string
     }
   }
 
