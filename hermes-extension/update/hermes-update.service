@@ -1,0 +1,7 @@
+[Unit]
+Description=Hermes auto-update (fetch upstream, apply clean merges, flag conflicts)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/dakotasb/.hermes/scripts/hermes-update.sh apply
