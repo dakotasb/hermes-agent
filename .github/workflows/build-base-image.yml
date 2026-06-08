@@ -8,8 +8,9 @@ name: Build base image (kiri)
 # and targets the `nousresearch` namespace on `main`. This one is additive and
 # fork-specific, so daily `hermes update` merges from upstream never touch it.
 #
-# Cost: public repo => free Actions minutes; public ghcr package => free
-# storage + egress. gha layer cache keeps rebuilds fast.
+# Cost: public repo => free Actions minutes; package is PRIVATE (the kiri-os
+# deploy runner pulls it with its own GITHUB_TOKEN). gha layer cache keeps
+# rebuilds fast.
 
 on:
   push:
@@ -20,6 +21,8 @@ on:
       - 'uv.lock'
       - 'Dockerfile'
       - 'docker/**'
+      - 'web/**'        # the Dockerfile builds the web dashboard (tsc + vite)
+      - 'ui-tui/**'     # ...and the ui-tui frontend
       - '.github/workflows/build-base-image.yml'
   workflow_dispatch:
 

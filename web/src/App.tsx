@@ -65,7 +65,7 @@ import { AuthWidget } from "@/components/AuthWidget";
 import { PageHeaderProvider } from "@/contexts/PageHeaderProvider";
 import { useSystemActions } from "@/contexts/useSystemActions";
 import type { SystemAction } from "@/contexts/system-actions-context";
-import { ToastProvider } from "@/hooks/useToast";
+import { ToastProvider } from "@/components/ToastProvider";
 import ConfigPage from "@/pages/ConfigPage";
 import DocsPage from "@/pages/DocsPage";
 import EnvPage from "@/pages/EnvPage";
