@@ -890,6 +890,10 @@ def _cleanup_all_browsers(*args, **kwargs):
 
 # Guard to prevent cleanup from running multiple times on exit
 _cleanup_done = False
+# One-shot CLI finalization runs before process cleanup so plugins can observe
+# the session boundary while the agent is still attached. If a signal lands in
+# that narrow window, atexit cleanup must not emit that session finalize again.
+_single_query_finalize_attempted_session_ids: set[str | None] = set()
 # Weak reference to the active AIAgent for memory provider shutdown at exit
 _active_agent_ref = None
 _deferred_agent_startup_done = False
@@ -989,11 +993,13 @@ def _run_cleanup(*, notify_session_finalize: bool = True):
     # Shut down memory provider (on_session_end + shutdown_all) at actual
     # session boundary — NOT per-turn inside run_conversation().
     if notify_session_finalize:
-        _notify_session_finalize(
-            session_id=_active_agent_ref.session_id if _active_agent_ref else None,
-            platform="cli",
-            reason="shutdown",
-        )
+        cleanup_session_id = _active_agent_ref.session_id if _active_agent_ref else None
+        if _should_emit_cleanup_session_finalize(cleanup_session_id):
+            _notify_session_finalize(
+                session_id=cleanup_session_id,
+                platform="cli",
+                reason="shutdown",
+            )
     try:
         if _active_agent_ref and hasattr(_active_agent_ref, 'shutdown_memory_provider'):
             # Forward the agent's own transcript so memory providers'
@@ -1009,6 +1015,14 @@ def _run_cleanup(*, notify_session_finalize: bool = True):
                 _active_agent_ref.shutdown_memory_provider()
     except Exception:
         pass
+
+
+def _should_emit_cleanup_session_finalize(session_id: str | None) -> bool:
+    if not _single_query_finalize_attempted_session_ids:
+        return True
+    if session_id is None:
+        return False
+    return session_id not in _single_query_finalize_attempted_session_ids
 
 
 def _notify_session_finalize(
@@ -1068,11 +1082,17 @@ def _emit_interrupted_session_end(cli, *, reason: str = "keyboard_interrupt") ->
 def _notify_single_query_session_finalize(cli, *, reason: str = "shutdown") -> None:
     agent = getattr(cli, "agent", None)
     session_id = getattr(agent, "session_id", None) or getattr(cli, "session_id", None)
-    _notify_session_finalize(
-        session_id=session_id,
-        platform=getattr(agent, "platform", None) or "cli",
-        reason=reason,
-    )
+    if session_id in _single_query_finalize_attempted_session_ids:
+        return
+
+    try:
+        _notify_session_finalize(
+            session_id=session_id,
+            platform=getattr(agent, "platform", None) or "cli",
+            reason=reason,
+        )
+    finally:
+        _single_query_finalize_attempted_session_ids.add(session_id)
 
 
 def _finalize_single_query(cli) -> None:
@@ -6496,6 +6516,47 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         }
         self._invalidate(min_interval=0.0)
 
+    def _confirm_expensive_model_switch(self, result) -> bool:
+        """Ask for explicit confirmation before applying costly model switches."""
+        if not getattr(result, "success", False):
+            return True
+        try:
+            from hermes_cli.model_cost_guard import expensive_model_warning
+
+            warning = expensive_model_warning(
+                result.new_model,
+                provider=result.target_provider,
+                base_url=result.base_url or self.base_url or "",
+                api_key=result.api_key or self.api_key or "",
+                model_info=result.model_info,
+            )
+        except Exception:
+            warning = None
+        if warning is None:
+            return True
+
+        choices = [
+            ("once", "Switch anyway", "Use this model for the current Hermes session."),
+            ("cancel", "Cancel", "Keep the current model."),
+        ]
+        raw = self._prompt_text_input_modal(
+            title="!!! Expensive Model Warning !!!",
+            detail=warning.message,
+            choices=choices,
+            timeout=120,
+        )
+        choice = self._normalize_slash_confirm_choice(raw, choices)
+        return choice == "once"
+
+    def _confirm_and_apply_model_switch_result(self, result, persist_global: bool) -> None:
+        try:
+            if result.success and not self._confirm_expensive_model_switch(result):
+                _cprint("  Model switch cancelled.")
+                return
+            self._apply_model_switch_result(result, persist_global)
+        except Exception as exc:
+            _cprint(f"  ✗ Model selection failed: {exc}")
+
     def _close_model_picker(self) -> None:
         self._model_picker_state = None
         self._restore_modal_input_snapshot()
@@ -6672,7 +6733,14 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                     custom_providers=state.get("custom_provs"),
                 )
                 self._close_model_picker()
-                self._apply_model_switch_result(result, persist_global)
+                if getattr(self, "_app", None):
+                    threading.Thread(
+                        target=self._confirm_and_apply_model_switch_result,
+                        args=(result, persist_global),
+                        daemon=True,
+                    ).start()
+                else:
+                    self._confirm_and_apply_model_switch_result(result, persist_global)
                 return
             self._close_model_picker()
 
@@ -6771,6 +6839,10 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
 
         if not result.success:
             _cprint(f"  ✗ {result.error_message}")
+            return
+
+        if not self._confirm_expensive_model_switch(result):
+            _cprint("  Model switch cancelled.")
             return
 
         # Apply to CLI state.
@@ -13264,9 +13336,21 @@ def main(
                 else:
                     toolsets_list.append(str(t))
     else:
-        # Use the shared resolver so MCP servers are included at runtime
-        from hermes_cli.tools_config import _get_platform_tools
-        toolsets_list = sorted(_get_platform_tools(CLI_CONFIG, "cli"))
+        # Coding posture (base Hermes): with no explicit --toolsets, collapse
+        # to the coding toolset (+ enabled MCP servers) when sitting in a code
+        # workspace. See agent/coding_context.py.
+        _coding = None
+        try:
+            from agent.coding_context import coding_selection
+            _coding = coding_selection(platform="cli", config=CLI_CONFIG)
+        except Exception:
+            _coding = None
+        if _coding is not None:
+            toolsets_list = _coding
+        else:
+            # Use the shared resolver so MCP servers are included at runtime
+            from hermes_cli.tools_config import _get_platform_tools
+            toolsets_list = sorted(_get_platform_tools(CLI_CONFIG, "cli"))
     
     parsed_skills = _parse_skills_argument(skills)
 
