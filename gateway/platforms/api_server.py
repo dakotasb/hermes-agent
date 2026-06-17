@@ -1018,6 +1018,7 @@ class APIServerAdapter(BasePlatformAdapter):
         ephemeral_system_prompt: Optional[str] = None,
         session_id: Optional[str] = None,
         stream_delta_callback=None,
+        reasoning_callback=None,
         tool_progress_callback=None,
         tool_start_callback=None,
         tool_complete_callback=None,
@@ -1066,6 +1067,7 @@ class APIServerAdapter(BasePlatformAdapter):
             session_id=session_id,
             platform="api_server",
             stream_delta_callback=stream_delta_callback,
+            reasoning_callback=reasoning_callback,
             tool_progress_callback=tool_progress_callback,
             tool_start_callback=tool_start_callback,
             tool_complete_callback=tool_complete_callback,
@@ -1646,6 +1648,15 @@ class APIServerAdapter(BasePlatformAdapter):
             if delta:
                 _enqueue("assistant.delta", {"message_id": message_id, "delta": delta})
 
+        def _reasoning(text: str) -> None:
+            # K-REASON: stream the model's real chain-of-thought LIVE (per chunk),
+            # before the answer. Reasoning models (kimi) emit reasoning tokens first,
+            # so this fills the pre-answer "thinking" gap without delaying the answer
+            # (distinct from the post-turn `reasoning` on assistant.completed, and the
+            # truncated `_thinking` tool.progress mirror).
+            if text:
+                _enqueue("reasoning.delta", {"message_id": message_id, "delta": text})
+
         def _tool_progress(event_type: str, tool_name: str = None, preview: str = None, args=None, **kwargs) -> None:
             if event_type == "reasoning.available":
                 _enqueue("tool.progress", {"message_id": message_id, "tool_name": tool_name or "_thinking", "delta": preview or ""})
@@ -1664,6 +1675,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     ephemeral_system_prompt=system_prompt,
                     session_id=session_id,
                     stream_delta_callback=_delta,
+                    reasoning_callback=_reasoning,
                     tool_progress_callback=_tool_progress,
                     gateway_session_key=gateway_session_key,
                 )
@@ -3860,6 +3872,7 @@ class APIServerAdapter(BasePlatformAdapter):
         ephemeral_system_prompt: Optional[str] = None,
         session_id: Optional[str] = None,
         stream_delta_callback=None,
+        reasoning_callback=None,
         tool_progress_callback=None,
         tool_start_callback=None,
         tool_complete_callback=None,
@@ -3893,6 +3906,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     ephemeral_system_prompt=ephemeral_system_prompt,
                     session_id=session_id,
                     stream_delta_callback=stream_delta_callback,
+                    reasoning_callback=reasoning_callback,
                     tool_progress_callback=tool_progress_callback,
                     tool_start_callback=tool_start_callback,
                     tool_complete_callback=tool_complete_callback,
