@@ -46,6 +46,12 @@ export interface SlashExecResponse {
   warning?: string
 }
 
+export interface BrowserManageResponse {
+  connected?: boolean
+  url?: string
+  messages?: string[]
+}
+
 export interface SessionSteerResponse {
   // 'queued' == accepted into the live turn's steer slot (injected at the next
   // tool-result boundary); 'rejected' == no live tool window, caller queues.
@@ -129,6 +135,7 @@ export interface ClientSessionState {
   serviceTier: string
   fast: boolean
   yolo: boolean
+  personality: string
   busy: boolean
   awaitingResponse: boolean
   streamId: string | null
