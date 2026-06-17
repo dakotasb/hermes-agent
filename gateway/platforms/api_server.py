@@ -1671,6 +1671,9 @@ class APIServerAdapter(BasePlatformAdapter):
                     "completed": True,
                     "partial": False,
                     "interrupted": False,
+                    # Phase-2: surface the real chain-of-thought to the dashboard
+                    # (distinct from the _thinking content-mirror).
+                    "reasoning": (result.get("last_reasoning") or "") if isinstance(result, dict) else "",
                 }))
                 await queue.put(_event_payload("run.completed", {
                     "session_id": effective_session_id,
