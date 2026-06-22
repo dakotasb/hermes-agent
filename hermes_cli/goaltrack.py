@@ -81,12 +81,19 @@ def _fmt_goal_detail(g: dict[str, Any]) -> str:
         f"Metric:   {g.get('metric') or '—'}",
     ]
     if g.get("target_value") is not None:
-        lines.append(f"Target:   {g['target_value']} {g.get('target_unit') or ''}")
+        cur = g.get("current_value")
+        cur_str = f"{cur} of " if cur is not None else ""
+        lines.append(f"Target:   {cur_str}{g['target_value']} {g.get('target_unit') or ''}".rstrip())
     lines += [
         f"Due:      {g.get('target_date') or '—'}",
         f"Created:  {_fmt_ts(g.get('created_at'))}",
         f"Updated:  {_fmt_ts(g.get('updated_at'))}",
     ]
+    milestones = g.get("milestones")
+    if milestones:
+        done = sum(1 for m in milestones if gdb.milestone_progress(m) >= 100)
+        lines.append(f"Key results ({done}/{len(milestones)}):")
+        lines += [_fmt_milestone_line(m) for m in milestones]
     return "\n".join(lines)
 
 
@@ -111,7 +118,9 @@ def _fmt_event_line(ev: dict[str, Any]) -> str:
 
 def cmd_list(args: argparse.Namespace) -> int:
     status = "all" if getattr(args, "all", False) else args.status
-    goals = gdb.list_goals(status=status)
+    # JSON consumers (the dashboard) get key results inline so they can render
+    # a goal's measurement without an extra call per goal.
+    goals = gdb.list_goals(status=status, with_milestones=args.json)
     if not goals:
         print("No goals found.")
         return 0
@@ -134,6 +143,7 @@ def cmd_create(args: argparse.Namespace) -> int:
             metric=args.metric or None,
             target_value=args.target_value,
             target_unit=args.target_unit or None,
+            current_value=args.current_value,
             target_date=args.target_date or None,
         )
     except ValueError as exc:
@@ -150,7 +160,8 @@ def cmd_create(args: argparse.Namespace) -> int:
 def cmd_update(args: argparse.Namespace) -> int:
     try:
         goal = gdb.update_progress(
-            args.id, args.progress, note=args.note or None
+            args.id, args.progress, note=args.note or None,
+            current_value=args.current_value,
         )
     except KeyError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -165,7 +176,7 @@ def cmd_update(args: argparse.Namespace) -> int:
 
 def cmd_show(args: argparse.Namespace) -> int:
     try:
-        goal = gdb.get_goal(args.id)
+        goal = gdb.get_goal(args.id, with_milestones=True)
     except KeyError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -215,6 +226,97 @@ def cmd_events(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Milestone (key result) handlers
+# ---------------------------------------------------------------------------
+
+def _fmt_milestone_line(m: dict[str, Any]) -> str:
+    if m.get("kind") == "numeric":
+        cur = m.get("current_value") or 0
+        tgt = m.get("target_value")
+        unit = f" {m['unit']}" if m.get("unit") else ""
+        measure = f"{cur} / {tgt}{unit}" if tgt is not None else f"{cur}{unit}"
+        box = f"[{round(gdb.milestone_progress(m))}%]"
+    else:
+        measure = ""
+        box = "[x]" if m.get("done") else "[ ]"
+    return f"  {box} {m['id']}  {m['title']}  {measure}".rstrip()
+
+
+def cmd_milestones(args: argparse.Namespace) -> int:
+    try:
+        milestones = gdb.list_milestones(args.id)
+    except KeyError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(milestones, indent=2))
+        return 0
+    if not milestones:
+        print("No key results yet.")
+        return 0
+    for m in milestones:
+        print(_fmt_milestone_line(m))
+    return 0
+
+
+def cmd_milestone_add(args: argparse.Namespace) -> int:
+    try:
+        m = gdb.add_milestone(
+            args.goal_id,
+            title=args.title,
+            kind=args.kind,
+            target_value=args.target_value,
+            unit=args.unit or None,
+            current_value=args.current_value,
+            weight=args.weight,
+        )
+    except (ValueError, KeyError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(m, indent=2))
+        return 0
+    print(f"Added key result {m['id']}")
+    return 0
+
+
+def cmd_milestone_update(args: argparse.Namespace) -> int:
+    fields: dict[str, Any] = {}
+    if args.title is not None:         fields["title"] = args.title
+    if args.kind is not None:          fields["kind"] = args.kind
+    if args.current_value is not None: fields["current_value"] = args.current_value
+    if args.target_value is not None:  fields["target_value"] = args.target_value
+    if args.unit is not None:          fields["unit"] = args.unit
+    if args.weight is not None:        fields["weight"] = args.weight
+    if args.position is not None:      fields["position"] = args.position
+    if args.done:                      fields["done"] = True
+    if args.undone:                    fields["done"] = False
+    if not fields:
+        print("error: nothing to update — pass at least one field", file=sys.stderr)
+        return 1
+    try:
+        m = gdb.update_milestone(args.id, **fields)
+    except (ValueError, KeyError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(m, indent=2))
+        return 0
+    print(f"Updated key result {m['id']}")
+    return 0
+
+
+def cmd_milestone_rm(args: argparse.Namespace) -> int:
+    try:
+        gdb.delete_milestone(args.id)
+    except KeyError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"Removed key result {args.id}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Parser construction (called from main.py)
 # ---------------------------------------------------------------------------
 
@@ -256,6 +358,8 @@ def build_parser(
                     help="Numeric target for quantitative goals")
     pc.add_argument("--target-unit",  default="",
                     help="Unit for target-value (e.g. '$/month', 'sessions/week')")
+    pc.add_argument("--current-value", type=float,    default=None,
+                    help="Current measured value (quantitative goals)")
     pc.add_argument("--json", action="store_true",    help="Output JSON")
 
     # -- update --
@@ -263,6 +367,8 @@ def build_parser(
     pu.add_argument("id",         help="Goal ID (e.g. goal-a1b2c3d4)")
     pu.add_argument("--progress", type=int, required=True, help="New progress (0–100)")
     pu.add_argument("--note",     default="", help="Optional note for the event log")
+    pu.add_argument("--current-value", type=float, default=None,
+                    help="Also stamp the goal's current measured value (quantitative goals)")
     pu.add_argument("--json",     action="store_true", help="Output JSON")
 
     # -- show --
@@ -283,6 +389,38 @@ def build_parser(
     pev.add_argument("id",   help="Goal ID")
     pev.add_argument("--json", action="store_true", help="Output JSON")
 
+    # -- milestones (key results) --
+    pms = sub.add_parser("milestones", help="List a goal's key results")
+    pms.add_argument("id",   help="Goal ID")
+    pms.add_argument("--json", action="store_true", help="Output JSON")
+
+    pma = sub.add_parser("milestone-add", help="Add a key result to a goal")
+    pma.add_argument("goal_id", help="Goal ID")
+    pma.add_argument("--title", required=True, help="Key-result text")
+    pma.add_argument("--kind", default="binary", choices=["binary", "numeric"],
+                     help="binary (done/not) or numeric (current/target)")
+    pma.add_argument("--target-value", type=float, default=None, help="Numeric target (numeric kind)")
+    pma.add_argument("--current-value", type=float, default=None, help="Starting current value (numeric kind)")
+    pma.add_argument("--unit", default="", help="Unit label (numeric kind)")
+    pma.add_argument("--weight", type=float, default=1.0, help="Roll-up weight (default 1)")
+    pma.add_argument("--json", action="store_true", help="Output JSON")
+
+    pmu = sub.add_parser("milestone-update", help="Update a key result")
+    pmu.add_argument("id", help="Milestone ID (e.g. kr-a1b2c3d4)")
+    pmu.add_argument("--title", default=None, help="New text")
+    pmu.add_argument("--kind", default=None, choices=["binary", "numeric"], help="Change kind")
+    pmu.add_argument("--current-value", type=float, default=None, help="New current value")
+    pmu.add_argument("--target-value", type=float, default=None, help="New target value")
+    pmu.add_argument("--unit", default=None, help="New unit label")
+    pmu.add_argument("--weight", type=float, default=None, help="New roll-up weight")
+    pmu.add_argument("--position", type=int, default=None, help="New sort position")
+    pmu.add_argument("--done", action="store_true", help="Mark complete (binary)")
+    pmu.add_argument("--undone", action="store_true", help="Mark incomplete (binary)")
+    pmu.add_argument("--json", action="store_true", help="Output JSON")
+
+    pmr = sub.add_parser("milestone-rm", help="Remove a key result")
+    pmr.add_argument("id", help="Milestone ID")
+
     return p
 
 
@@ -291,13 +429,17 @@ def build_parser(
 # ---------------------------------------------------------------------------
 
 _HANDLERS = {
-    "list":     cmd_list,
-    "create":   cmd_create,
-    "update":   cmd_update,
-    "show":     cmd_show,
-    "complete": cmd_complete,
-    "abandon":  cmd_abandon,
-    "events":   cmd_events,
+    "list":              cmd_list,
+    "create":            cmd_create,
+    "update":            cmd_update,
+    "show":              cmd_show,
+    "complete":          cmd_complete,
+    "abandon":           cmd_abandon,
+    "events":            cmd_events,
+    "milestones":        cmd_milestones,
+    "milestone-add":     cmd_milestone_add,
+    "milestone-update":  cmd_milestone_update,
+    "milestone-rm":      cmd_milestone_rm,
 }
 
 
