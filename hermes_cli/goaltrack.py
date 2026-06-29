@@ -320,17 +320,14 @@ def cmd_milestone_rm(args: argparse.Namespace) -> int:
 # Parser construction (called from main.py)
 # ---------------------------------------------------------------------------
 
-def build_parser(
-    subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]",
-) -> argparse.ArgumentParser:
-    p = subparsers.add_parser(
-        "goals",
-        help="Personal and project goal tracking (hermes goals …)",
-        description=(
-            "Create and track goals stored in ~/.hermes/goals.db. "
-            "Goals are independent of any dashboard and readable by all skills."
-        ),
-    )
+def setup_parser(p: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    """Populate an already-created ``goals`` parser (plugin ``setup_fn``).
+
+    The plugin framework (``plugins/goals/``) creates the ``goals`` subparser and
+    passes it here. Living in a plugin instead of ``hermes_cli/main.py`` keeps the
+    CLI core from diverging from upstream — that registration block was the sole
+    recurring upstream-merge conflict.
+    """
     sub = p.add_subparsers(dest="goals_command")
 
     # -- list --
@@ -425,7 +422,7 @@ def build_parser(
 
 
 # ---------------------------------------------------------------------------
-# Dispatcher (called by cmd_goals in main.py)
+# Dispatcher (called by the goals plugin handler_fn)
 # ---------------------------------------------------------------------------
 
 _HANDLERS = {

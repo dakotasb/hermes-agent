@@ -1,0 +1,9 @@
+name: goals
+version: 0.1.0
+description: "Native personal/project goal tracking (hermes goals …), stored in ~/.hermes/goals.db, independent of any dashboard and readable by all skills. Kiri OS customization moved out of hermes_cli/main.py into a plugin to keep the CLI core conflict-free against upstream."
+author: Kiri OS
+kind: standalone
+platforms:
+  - linux
+  - macos
+  - windows

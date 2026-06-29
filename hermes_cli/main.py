@@ -4259,13 +4259,6 @@ def cmd_kanban(args):
     return kanban_command(args)
 
 
-def cmd_goals(args):
-    """Personal and project goal tracking."""
-    from hermes_cli.goaltrack import goals_command
-
-    return goals_command(args)
-
-
 def cmd_project(args):
     """Manage projects (named, multi-folder workspaces)."""
     from hermes_cli.projects_cmd import projects_command
@@ -11931,7 +11924,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "computer-use",
         "config", "cron", "curator", "dashboard", "serve", "debug", "doctor",
         "dump", "fallback", "gateway", "hooks", "import", "insights",
-        "goals", "gui", "desktop", "kanban", "login", "logout", "logs", "lsp", "mcp", "memory", "migrate", "moa",
+        "gui", "desktop", "kanban", "login", "logout", "logs", "lsp", "mcp", "memory", "migrate", "moa",
         "model", "pairing", "pets", "plugins", "portal", "postinstall", "profile",
         "project", "proxy",
         "prompt-size",
@@ -12676,14 +12669,6 @@ def main():
     # =========================================================================
     from hermes_cli.portal_cli import add_parser as _add_portal_parser
     _add_portal_parser(subparsers)
-
-    # =========================================================================
-    # goals command — native personal / project goal tracking
-    # =========================================================================
-    from hermes_cli.goaltrack import build_parser as _build_goals_parser
-
-    goals_parser = _build_goals_parser(subparsers)
-    goals_parser.set_defaults(func=cmd_goals)
 
     # =========================================================================
     # kanban command — multi-profile collaboration board
